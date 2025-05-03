@@ -1,0 +1,69 @@
+import discord
+import asyncio
+import requests
+from bs4 import BeautifulSoup
+from collections import Counter
+import os
+
+TOKEN = os.getenv("TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+
+IMAGE_MAP = {
+    "RolePlay": "https://i.imgur.com/6CAFAWG.png",
+    "Event": "https://i.imgur.com/00VkfAY.png",
+    "Activity": "https://i.imgur.com/I14zXZM.png",
+    "Turf War": "https://i.imgur.com/kYN95Ka.png",
+    "Bank Rob": "https://i.imgur.com/iCGLx31.png"
+}
+
+URL = "https://saesrpg.uk/forums/topic/42569-cripz~-official-media-archive/"
+
+intents = discord.Intents.default()
+client = discord.Client(intents=intents)
+message_id = None  # Will hold the bot message ID
+
+async def fetch_image_counts():
+    try:
+        response = requests.get(URL)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        all_imgs = soup.find_all('img')
+        srcs = [img['src'] for img in all_imgs if 'src' in img.attrs]
+
+        counts = Counter()
+        for label, img_url in IMAGE_MAP.items():
+            counts[label] = srcs.count(img_url)
+        return counts
+    except Exception as e:
+        print("Error while fetching stats:", e)
+        return Counter()
+
+async def update_stats():
+    await client.wait_until_ready()
+    global message_id
+    channel = client.get_channel(CHANNEL_ID)
+
+    while not client.is_closed():
+        stats = await fetch_image_counts()
+
+        content = "**📊 CripZ~ Media Archive Stats:**\n"
+        for label, count in stats.items():
+            content += f"**{label}:** {count}\n"
+
+        try:
+            if message_id:
+                msg = await channel.fetch_message(message_id)
+                await msg.edit(content=content)
+            else:
+                msg = await channel.send(content)
+                message_id = msg.id
+        except Exception as e:
+            print("Failed to update Discord message:", e)
+
+        await asyncio.sleep(300)  # 5 minutes
+
+@client.event
+async def on_ready():
+    print(f"Logged in as {client.user}")
+    await update_stats()
+
+client.run(TOKEN)
